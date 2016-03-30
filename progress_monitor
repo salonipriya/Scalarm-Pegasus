@@ -1,0 +1,60 @@
+#!/usr/bin/env ruby
+# encoding: UTF-8
+require 'json'
+
+def progress(main_Dir)
+	  parsed_output = {}
+    puts ""
+    puts "Progress every 30 seconds"
+    pegasus_status = `pegasus-status -l #{main_Dir}`
+    pegasus_status = pegasus_status.force_encoding("BINARY")
+    pegasus_status.encode("UTF-8", invalid: :replace, undef: :replace)
+    split_at = "\\n"
+    split_at = split_at.force_encoding("BINARY")
+    split_at = split_at.encode('utf-8', :invalid => :replace, :undef => :replace, :replace => '_')
+    #puts "STATUS"
+    flag = false
+    pegasus_status.split(split_at).each do |line|
+      if line.start_with? "UNRDY"
+      	parsed_output["Summary: "] = line
+        # puts line
+        flag = true
+    end
+      if (flag)
+      	# puts line
+      	# Parsing if Required
+        summary = line.split
+        # puts "From Summary"
+        # puts summary[2]
+        parsed_output["READY: "] = summary[2]
+        parsed_output["jobs in queue: "] = summary[3]
+        parsed_output["jobs DONE: "] = summary[5]
+        parsed_output["%DONE: "] = summary[7]
+        parsed_output["workflow in STATE: "] = summary[8]
+        flag = false
+      end
+    end
+    return pegasus_status
+end
+
+def main
+
+  dir = ""
+  if File.exist?('location.txt') 
+      File.open("location.txt") do |file|
+          file.each do |line|
+            dir = dir << line
+          end
+      end
+  end
+
+  if dir!=""
+    result  = progress dir 
+    result = result.force_encoding("ISO-8859-1").encode("UTF-8")
+    IO.write 'intermediate_result.json', { status: 'ok', results: result }.to_json
+    sleep (0.5)
+  end
+
+end
+
+main

@@ -1,0 +1,196 @@
+#!/usr/bin/env ruby
+# encoding: UTF-8
+require 'json'
+
+class NewWorkFlow
+  attr_reader :status
+  attr_accessor :workflow_label, :submit_dir
+  @base_Dir = String.new
+
+  def initialize(config_to_run, dir)
+    @config_to_run = config_to_run
+    @dir = dir
+    @submit_dir = "/data/scratch/rafsilva/workflow/genome"
+    # Cleanup Later
+   
+    @workflow_label = "genomeOutput"
+  end
+
+  def start
+
+    # print "Starting workflow with: '#{cmd}'"
+    
+    # generate-dax  <WORK_DIR>  <LANEFILE>  <BINSIZE>
+    # @LANEFILE = "/data/scratch/rafsilva/workflow/genome/lanes/test_4000"
+    # @BINSIZE = 100
+    # @Work_DIR = "work"
+	  cmd =["cd #{@submit_dir}","./generate-dax work /data/scratch/rafsilva/workflow/genome/lanes/test_4000 100"].join("; ")  
+    # puts "Generate DAX output"
+    # puts 
+    %x[#{cmd}]
+    cmd =["cd #{@submit_dir}","./plan-dax work execution"].join("; ")
+    @base_Dir = %x[#{cmd}]
+    # puts "Plan Dax RUN"
+    # puts @base_Dir
+  end
+
+  def running?
+    update_status 
+    str_run = "Running"
+    str_run = str_run.force_encoding("BINARY")
+    str_run.encode("UTF-8", invalid: :replace, undef: :replace)
+    @status.include?("STATE") and (@status["STATE"] == str_run)
+  end
+
+  def getBaseDir
+    analyzer_Dir = ""
+    lookFor = "/data/scratch/rafsilva/workflow/genome/work/rafsilva/pegasus/genome-dax/"
+    # output = output.split(",").select{ |s| s[/"ccg3"/i] }.first
+    @base_Dir.each_line do |line|
+    if line.include? lookFor
+      analyzer_Dir = line
+      break if analyzer_Dir !=  ""
+    end
+    end
+    a_Dir = analyzer_Dir.split(lookFor)
+    lookFor << a_Dir[1]
+    # Output check
+    # puts lookFor
+    if not File.exist?('location.txt')
+	  open('location.txt', 'w') { |f|
+	  f.puts lookFor
+	}
+	end
+    return lookFor
+  end
+
+  def update_status
+    lookFor = self.getBaseDir
+    pegasus_status = `pegasus-status -l #{lookFor}`
+    @status = parse_pegasus_status pegasus_status
+  end
+
+  def failed?
+    @status.include?("STATE") and (@status["STATE"] == "Failure")
+  end
+
+
+
+  def summary
+  lookFor = self.getBaseDir
+  # Analyzer cmd: Pegasus
+  puts "Analyzer Data"
+  puts `pegasus-analyzer -d #{lookFor}`
+  end
+
+
+  # def jobs_statistics
+
+  # lookFor =self.getBaseDir
+
+  # puts "Statistics Data"
+  # puts `pegasus-statistics –s all #{lookFor}`
+  # end
+
+  def full_results
+  	outputs = {}
+  	self.summary
+  	# self.jobs_statistics
+    puts "Success"
+    outputs
+  end
+
+def to_utf8(str)
+  # str = str.force_encoding("UTF-8")
+  # return str if str.valid_encoding?
+  str = str.force_encoding("BINARY")
+  str.encode("UTF-8", invalid: :replace, undef: :replace)
+  return str
+end
+
+
+  def parse_pegasus_status(status_output)
+    parsed_output = {}
+
+    parse_job_mode = false
+    parse_summary_mode = false
+
+    status_output = to_utf8(status_output) 
+    split_at = "\\n"
+    split_at = split_at.force_encoding("BINARY")
+    split_at = split_at.encode('utf-8', :invalid => :replace, :undef => :replace, :replace => '_')
+    
+    if !(status_output.nil?)
+    status_output.split(split_at).each do |line|
+      if line.start_with? "STAT"
+        parse_job_mode = true
+      elsif line.start_with? "Summary"
+        parse_job_mode = false
+      elsif parse_job_mode
+        status, in_state, job = line.split
+
+        ch_index = job.index(/([a-zA-Z])/)
+        if ch_index.nil?
+          puts "Couldn't parse: #{line}"
+        else
+          job = job[ch_index..-1]
+          parsed_output[job] = { "status" => status, "in_state" => in_state }
+        end
+
+      elsif line.start_with? "UNRDY"
+        parse_summary_mode = true
+      elsif parse_summary_mode
+        summary = line.split
+        parsed_output["%DONE"] = summary[7]
+        parsed_output["STATE"] = summary[8]
+      end
+    end
+  end
+    parsed_output
+  end
+
+
+  def progress
+    # puts ""
+    # puts "Progress every 30 seconds"
+    # lookFor = self.getBaseDir
+    # pegasus_status = `pegasus-status -l #{lookFor}`
+    # puts pegasus_status
+  end
+end #End Class
+
+
+#== Main Script ==##
+def main
+  config_to_run = File.dirname(__FILE__)
+  dir = File.dirname(__FILE__)
+
+  workflow = NewWorkFlow.new(config_to_run, dir)
+  workflow.start
+
+  sleep 30
+
+  IO.write 'output.json', { status: 'ok', results: workflow.update_status }.to_json
+
+ while workflow.running?
+    # IO.write 'intermediate_result.json', { status: 'ok', results:"From executor"}.to_json
+    # Calling the progress monitor
+    # workflow.progress
+    # sleep (0.5)
+  end
+
+  sleep 60
+
+  if workflow.failed?
+    IO.write 'output.json', { status: 'error', reason: status }.to_json
+  else
+    %x[mkdir #{workflow.workflow_label}]
+    %x[tar czvf output.tar.gz --directory=/data/scratch/rafsilva/workflow/genome outputs/]
+    sleep 30
+
+    IO.write 'output.json', { status: 'ok', results: workflow.full_results }.to_json
+  end
+end
+
+
+main
