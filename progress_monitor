@@ -2,39 +2,41 @@
 # encoding: UTF-8
 require 'json'
 
-def progress(main_Dir)
-	  parsed_output = {}
-    puts ""
-    puts "Progress every 30 seconds"
+# Parse the Status 
+class JSON_Parsing 
+  def Parse(main_Dir)
+    parsed_output = {}
     pegasus_status = `pegasus-status -l #{main_Dir}`
-    pegasus_status = pegasus_status.force_encoding("BINARY")
-    pegasus_status.encode("UTF-8", invalid: :replace, undef: :replace)
-    split_at = "\\n"
-    split_at = split_at.force_encoding("BINARY")
-    split_at = split_at.encode('utf-8', :invalid => :replace, :undef => :replace, :replace => '_')
+
+    # pegasus_status = pegasus_status.force_encoding("BINARY")
+    # pegasus_status.encode("UTF-8", invalid: :replace, undef: :replace)
+
+    # split_at = "\\n"
+    # split_at = split_at.force_encoding("BINARY")
+    # split_at = split_at.encode('utf-8', :invalid => :replace, :undef => :replace, :replace => '_')
+
     #puts "STATUS"
     flag = false
-    pegasus_status.split(split_at).each do |line|
-      if line.start_with? "UNRDY"
-      	parsed_output["Summary: "] = line
-        # puts line
+    pegasus_status.split("\n").each do |line|
+      if line.include? "UNRDY"
         flag = true
-    end
-      if (flag)
-      	# puts line
-      	# Parsing if Required
-        summary = line.split
-        # puts "From Summary"
-        # puts summary[2]
-        parsed_output["READY: "] = summary[2]
-        parsed_output["jobs in queue: "] = summary[3]
-        parsed_output["jobs DONE: "] = summary[5]
-        parsed_output["%DONE: "] = summary[7]
-        parsed_output["workflow in STATE: "] = summary[8]
+      elsif (flag)
+        summary = line.split  
+        parsed_output["UNRDY"] = summary[0]
+        parsed_output["READY"] = summary[1]
+        parsed_output["PRE"] = summary[2]
+        parsed_output["IN_Q"] = summary[3]
+        parsed_output["POST"] = summary[4]
+        parsed_output["DONE"] = summary[5]
+        parsed_output["FAIL"] = summary[6]
+        parsed_output["%DONE"] = summary[7]
+        parsed_output["STATE"] = summary[8]
         flag = false
       end
     end
-    return pegasus_status
+    # puts parsed_output
+    return parsed_output
+  end
 end
 
 def main
@@ -49,9 +51,10 @@ def main
   end
 
   if dir!=""
-    result  = progress dir 
-    result = result.force_encoding("ISO-8859-1").encode("UTF-8")
-    IO.write 'intermediate_result.json', { status: 'ok', results: result }.to_json
+    newObj = JSON_Parsing.new
+    newObj.Parse(dir)
+    # result = result.force_encoding("ISO-8859-1").encode("UTF-8")
+    IO.write 'intermediate_result.json', { status: 'ok', results: newObj.Parse(dir) }.to_json
     sleep (0.5)
   end
 

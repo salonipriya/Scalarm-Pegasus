@@ -11,10 +11,23 @@ class NewWorkFlow
     @config_to_run = config_to_run
     @dir = dir
     @submit_dir = "/data/scratch/rafsilva/workflow/genome"
-    # Cleanup Later
-   
     @workflow_label = "genomeOutput"
   end
+
+# def to_utf8(str)
+#   # str = str.force_encoding("UTF-8")
+#   # return str if str.valid_encoding?
+#   str = str.force_encoding("BINARY")
+#   str.encode("UTF-8", invalid: :replace, undef: :replace)
+#   return str
+# end
+
+# Encode Special Character
+# def to_utf8_specialcharacter(str)
+#     str = str.force_encoding("BINARY")
+#     str = str.encode('utf-8', :invalid => :replace, :undef => :replace, :replace => '_')
+#     return str
+# end
 
   def start
 
@@ -24,28 +37,38 @@ class NewWorkFlow
     # @LANEFILE = "/data/scratch/rafsilva/workflow/genome/lanes/test_4000"
     # @BINSIZE = 100
     # @Work_DIR = "work"
-	  cmd =["cd #{@submit_dir}","./generate-dax work /data/scratch/rafsilva/workflow/genome/lanes/test_4000 100"].join("; ")  
+    # TEST Next Week
+ #    dir = ""
+	#   if File.exist?('location.txt') 
+	#       File.open("location.txt") do |file|
+	#           file.each do |line|
+	#             dir = dir << line
+	#           end
+	#       end
+	#   end
+
+	# if(dir != "")
+	# @status = update_status
+	#     if(@status == "Success")
+	#     else 
+	#     	puts "RUN"
+	#     	`pegasus-run #{dir}`
+	#     end
+	# else
+	cmd =["cd #{@submit_dir}","./generate-dax work /data/scratch/rafsilva/workflow/genome/lanes/test_4000 100"].join("; ")  
     # puts "Generate DAX output"
     # puts 
     %x[#{cmd}]
     cmd =["cd #{@submit_dir}","./plan-dax work execution"].join("; ")
     @base_Dir = %x[#{cmd}]
+	# end
     # puts "Plan Dax RUN"
     # puts @base_Dir
-  end
-
-  def running?
-    update_status 
-    str_run = "Running"
-    str_run = str_run.force_encoding("BINARY")
-    str_run.encode("UTF-8", invalid: :replace, undef: :replace)
-    @status.include?("STATE") and (@status["STATE"] == str_run)
   end
 
   def getBaseDir
     analyzer_Dir = ""
     lookFor = "/data/scratch/rafsilva/workflow/genome/work/rafsilva/pegasus/genome-dax/"
-    # output = output.split(",").select{ |s| s[/"ccg3"/i] }.first
     @base_Dir.each_line do |line|
     if line.include? lookFor
       analyzer_Dir = line
@@ -67,14 +90,27 @@ class NewWorkFlow
   def update_status
     lookFor = self.getBaseDir
     pegasus_status = `pegasus-status -l #{lookFor}`
-    @status = parse_pegasus_status pegasus_status
+    @status = parse_pegasus_status pegasus_status  
+    return @status
+  end
+
+ def running?
+    @status = update_status
+    if(@status == "Running")
+    	return true
+    else 
+    	return false
+    end
   end
 
   def failed?
-    @status.include?("STATE") and (@status["STATE"] == "Failure")
+     @status = update_status
+    if(@status == "Failure")
+    	return true
+    else 
+    	return false
+    end
   end
-
-
 
   def summary
   lookFor = self.getBaseDir
@@ -83,80 +119,46 @@ class NewWorkFlow
   puts `pegasus-analyzer -d #{lookFor}`
   end
 
-
-  # def jobs_statistics
-
-  # lookFor =self.getBaseDir
-
-  # puts "Statistics Data"
-  # puts `pegasus-statistics –s all #{lookFor}`
-  # end
-
   def full_results
   	outputs = {}
+    # Analyzer Output
   	self.summary
-  	# self.jobs_statistics
-    puts "Success"
     outputs
   end
 
-def to_utf8(str)
-  # str = str.force_encoding("UTF-8")
-  # return str if str.valid_encoding?
-  str = str.force_encoding("BINARY")
-  str.encode("UTF-8", invalid: :replace, undef: :replace)
-  return str
-end
-
+# def tempfull_results
+#   	outputs = {}
+#     # Analyzer Output
+#     # Specify the directory location properly
+#   	intermediate_hash = JSON.parse( IO.read("intermediate_result.json", encoding:'utf-8') )
+#   	outputs = intermediate_hash.deep_dup
+#     outputs
+#   end
 
   def parse_pegasus_status(status_output)
-    parsed_output = {}
 
     parse_job_mode = false
     parse_summary_mode = false
 
-    status_output = to_utf8(status_output) 
-    split_at = "\\n"
-    split_at = split_at.force_encoding("BINARY")
-    split_at = split_at.encode('utf-8', :invalid => :replace, :undef => :replace, :replace => '_')
-    
-    if !(status_output.nil?)
-    status_output.split(split_at).each do |line|
-      if line.start_with? "STAT"
-        parse_job_mode = true
-      elsif line.start_with? "Summary"
-        parse_job_mode = false
-      elsif parse_job_mode
-        status, in_state, job = line.split
+    # status_output = to_utf8(status_output) 
+    # split_at = to_utf8_specialcharacter("\\n")
 
-        ch_index = job.index(/([a-zA-Z])/)
-        if ch_index.nil?
-          puts "Couldn't parse: #{line}"
-        else
-          job = job[ch_index..-1]
-          parsed_output[job] = { "status" => status, "in_state" => in_state }
-        end
+    parse_summary_mode = false
+    state = "Running"
 
-      elsif line.start_with? "UNRDY"
+    status_output.split("\n").each do |line|
+      if line.start_with? "UNRDY"
         parse_summary_mode = true
       elsif parse_summary_mode
         summary = line.split
-        parsed_output["%DONE"] = summary[7]
-        parsed_output["STATE"] = summary[8]
+        state = summary[8]
+        parse_summary_mode = false
       end
     end
+    return state
   end
-    parsed_output
-  end
+  
 
-
-  def progress
-    # puts ""
-    # puts "Progress every 30 seconds"
-    # lookFor = self.getBaseDir
-    # pegasus_status = `pegasus-status -l #{lookFor}`
-    # puts pegasus_status
-  end
 end #End Class
 
 
@@ -170,16 +172,15 @@ def main
 
   sleep 30
 
-  IO.write 'output.json', { status: 'ok', results: workflow.update_status }.to_json
-
- while workflow.running?
-    # IO.write 'intermediate_result.json', { status: 'ok', results:"From executor"}.to_json
-    # Calling the progress monitor
-    # workflow.progress
-    # sleep (0.5)
+  # IO.write 'output.json', { status: 'ok', results: workflow.update_status }.to_json
+ while (workflow.running?)
+    sleep 10
   end
 
   sleep 60
+
+    # Remove the on-fly create file
+    File.delete("location.txt") if File.exist?("location.txt")
 
   if workflow.failed?
     IO.write 'output.json', { status: 'error', reason: status }.to_json
@@ -191,6 +192,5 @@ def main
     IO.write 'output.json', { status: 'ok', results: workflow.full_results }.to_json
   end
 end
-
 
 main
