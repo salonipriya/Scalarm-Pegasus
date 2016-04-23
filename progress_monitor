@@ -52,7 +52,7 @@ def main
 
   if dir!=""
     newObj = JSON_Parsing.new
-    newObj.Parse(dir)
+    # newObj.Parse(dir)
     # result = result.force_encoding("ISO-8859-1").encode("UTF-8")
     IO.write 'intermediate_result.json', { status: 'ok', results: newObj.Parse(dir) }.to_json
     sleep (0.5)
