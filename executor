@@ -1,3 +1,4 @@
+# Executor Adapter Scalarm
 #!/usr/bin/env ruby
 # encoding: UTF-8
 require 'json'
@@ -111,42 +112,59 @@ end ##END
 
 ########################################################## Pegasus-Analyzer #######################################################
 def analyzer
-lookFor = self.getBaseDir
-return `pegasus-analyzer -d #{lookFor}`
+lookFor = self.getBaseDir # Pegasus cmd: Run on the newly created directory on-fly (Gets the directory location)
+return `pegasus-analyzer -d #{lookFor}`# Pegasus cmd: command used to gather information of the jobs at hand (Can also hold information to identify the jobs that failed and reason for failure)
 end
 ############################################################### END ###############################################################
 
 
 ########################################################## Pegasus-Statistics #####################################################
-   ## Function to Parse Statistics out and get the value of the current workflow status state
+   ## Function to Parse Pegasus Statistics output
+   ## Parsing Result Format:
+		# Type           Succeeded Failed  Incomplete  Total     Retries   Total+Retries
+		# Tasks          5         0       0           5         0         5            
+		# Jobs           15        0       0           15        0         15           
+		# Sub-Workflows  0         0       0           0         0         0            
+		# Workflow wall time                                       : 2 mins, 6 secs
+		# Workflow cumulative job wall time                        : 38 secs
+		# Cumulative job wall time as seen from submit side        : 42 secs
+		# Workflow cumulative job badput wall time                 : 
+		# Cumulative job badput wall time as seen from submit side : 
 def parse_pegasus_job_statistics(content)
     parsed_statistics_output = {}
     check_ForI = {"Tasks" => "R1","Jobs" => "R2","Sub-Workflows" => "R3"} # HashSet could be used
-    check_ForII = {"Workflow wall time" => "Wall time: ", "Workflow cumulative job wall time" => "Cummulative wall Time: ", "Cumulative job wall time as seen from submit side" => "Cummulative Wall Time - submit code:", "Workflow cumulative job badput wall time" => "Cumulative badput wall time: ", "Cumulative job badput wall time as seen from submit side" => "Cummulative badput wall Time - submit code: "}
+    check_ForII = {"Workflowwalltime" => "Wall time: ", "Cumulativejobwalltime" => "Cumulative wall time: ", "Cumulativejobwalltimeasseenfromsubmitside" => "Cumulative Wall Time - submit code:", "Cumulativejobbadputwalltime" => "Cumulative badput wall time: ", "Cumulativejobbadputwalltimeasseenfromsubmitside" => "Cummulative badput wall Time - submit code: "}
     content.split("\n").each do |line|
       if line.include? "Type"
       	parsed_statistics_output["Summary"] = line
-      elsif(!line[Regexp.union(check_ForI.keys)].nil?)
+      elsif(!line[Regexp.union(check_ForI.keys)].nil?) 
       	key = line[Regexp.union(check_ForI.keys)]
       	parsed_statistics_output[key] = line
-      elsif (!line[Regexp.union(check_ForII.keys)].nil?)
+      elsif (line.include? ":")
       	s = line.split(":")
-      	key = line[Regexp.union(check_ForII.keys)]
-      	parsed_statistics_output[check_ForII[key]] = s[1]
+      	key = s[0].gsub(/\s+/, '')
+      	if(check_ForII.has_key? key)
+      		if(s[1].nil?)
+      		s[1] = " "
+      		end
+      		parsed_statistics_output[check_ForII[key]] = check_ForII[key]<<s[1]
+      	end
       end
     end
-    # puts parsed_output
-    puts parsed_statistics_output
+    #Print in a readable format
+    parsed_statistics_output.each do |key, value|
+    puts value
+    end
 end ##END
 
 
 # Statistics: pegasus-statistics
 def jobs_statistics
     lookFor = self.getBaseDir
-      cmd = "pegasus-statistics -s all #{lookFor}"
+      cmd = "pegasus-statistics -s all #{lookFor}" # Pegasus cmd: command used to gather statistics about the runtime of the workflow and its jobs
       puts "Command: #{cmd}"
-      output = %x[#{cmd}]
-      parse_pegasus_job_statistics(output)
+      output = %x[#{cmd}] # Ruby syntax: command execution
+      parse_pegasus_job_statistics(output) # Function help: Display the necessary result in the output window Scalarm
       return output
 end
 ############################################################### END ###############################################################
@@ -156,17 +174,15 @@ end
 
 ########################################################## Workflow Run Results ####################################################
 def full_results(flag)
-    if(flag==0) 
+    if(flag==0) #Flag==0 implies that the Workflow run successfully without errors
   	outputs = {}
     # Put the content of analyzer and Statistics in the output.json file
-    outputs["Summary"] = self.analyzer
-    outputs["Statistics"] = self.jobs_statistics
-    return outputs
+    outputs["Summary"] = self.analyzer # Pegasus Analyzer Output
+    outputs["Statistics"] = self.jobs_statistics # Pegasus Statistics Output
+    return outputs # json object: Return Json object on workflow success
   else
     a = self.analyzer
-    s = self.jobs_statistics
-    puts a<<s
-    return a<<s
+    return a # Reason for Failure: output json file requires string to as output for reason
   end
 end
 ############################################################### END ###############################################################
@@ -176,30 +192,29 @@ end # End Class NewWorkFlow
 
 #== Main Script ==##
 def main
-  dir = "/data/scratch/rafsilva/workflow/genome"
+  dir = "/data/scratch/rafsilva/workflow/genome" # Non-generic: Specify the directory respectively
 
   workflow = NewWorkFlow.new(dir)
   workflow.start # Start the new workflow run on Pegasus
 
   sleep 30
 
-  #  Scalarm Progress Bar: shows Green till the workflow in State: Running
+  #  Scalarm Progress Bar: shows Green till the workflow in State: Running ()
  while (workflow.running?)
     sleep 10
   end
 
   sleep 30
 
-    # Remove the on-fly create file: Since being used for Re-run have not removed the file created on-fly
-    # File.delete("location.txt") if File.exist?("location.txt")
-
   if workflow.failed?
+  	# Result: The json output comprises of the Pegasus analyzer output(with reason for Failure)
   	IO.write 'output.json', { status: 'error', reason: workflow.full_results(1) }.to_json
   else
+  	#Fetch the output file for Scalarm
     %x[mkdir #{workflow.workflow_label}]
     %x[tar czvf output.tar.gz --directory=/data/scratch/rafsilva/workflow/genome outputs/]
     sleep 30
-
+    # Result: The json output comprises of the Pegasus analyzer output and Pegasus Statistics Output
     IO.write 'output.json', { status: 'ok', results: workflow.full_results(0) }.to_json
   end
 end

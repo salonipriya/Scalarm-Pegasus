@@ -1,21 +1,16 @@
+# Progress_Monitor Adapter Scalarm
 #!/usr/bin/env ruby
 # encoding: UTF-8
 require 'json'
 
-# Parse the Status 
+ ## Function to Parse Pegasus Analyzer output
+   ## Parsing Result Format:
+    # UNRDY READY   PRE  IN_Q  POST  DONE  FAIL %DONE STATE                                   
+    # 14     0     0     1     0     2     0  11.8 Running  
 class JSON_Parsing 
   def Parse(main_Dir)
     parsed_output = {}
     pegasus_status = `pegasus-status -l #{main_Dir}`
-
-    # pegasus_status = pegasus_status.force_encoding("BINARY")
-    # pegasus_status.encode("UTF-8", invalid: :replace, undef: :replace)
-
-    # split_at = "\\n"
-    # split_at = split_at.force_encoding("BINARY")
-    # split_at = split_at.encode('utf-8', :invalid => :replace, :undef => :replace, :replace => '_')
-
-    #puts "STATUS"
     flag = false
     pegasus_status.split("\n").each do |line|
       if line.include? "UNRDY"
@@ -34,13 +29,13 @@ class JSON_Parsing
         flag = false
       end
     end
-    # puts parsed_output
     return parsed_output
   end
 end
 
 def main
 
+  # Get the location of the directory created on-fly at Pegasus start time: (Dir location stored via Executor Adapter)
   dir = ""
   if File.exist?('location.txt') 
       File.open("location.txt") do |file|
@@ -52,12 +47,10 @@ def main
 
   if dir!=""
     newObj = JSON_Parsing.new
-    # newObj.Parse(dir)
-    # result = result.force_encoding("ISO-8859-1").encode("UTF-8")
+    # Result: The json output comprises of the Pegasus analyzer output parsed in necessary format
     IO.write 'intermediate_result.json', { status: 'ok', results: newObj.Parse(dir) }.to_json
     sleep (0.5)
   end
-
 end
 
 main
